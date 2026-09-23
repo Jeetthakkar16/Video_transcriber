@@ -1,0 +1,68 @@
+1
+00:00:04,600 --> 00:00:07,760
+Hi! What floor are you headed to?
+
+2
+00:00:08,060 --> 00:00:09,920
+Oh, I'm heading to the first floor.
+
+3
+00:00:10,280 --> 00:00:11,220
+The first floor?
+
+4
+00:00:11,740 --> 00:00:13,700
+You mean the ground floor, right?
+
+5
+00:00:14,080 --> 00:00:18,420
+No, no. The first floor is the floor above the ground floor.
+
+6
+00:00:18,840 --> 00:00:20,720
+Man, it's so confusing.
+
+7
+00:00:21,160 --> 00:00:24,200
+In America, we just call it a ground floor.
+
+8
+00:00:24,700 --> 00:00:28,200
+Well, we like to keep things a bit more complicated.
+
+9
+00:00:28,720 --> 00:00:29,400
+That's weird.
+
+10
+00:00:29,400 --> 00:00:31,380
+And what about an elevator?
+
+11
+00:00:32,000 --> 00:00:32,920
+What do you call it?
+
+12
+00:00:33,340 --> 00:00:34,580
+We call it a lift.
+
+13
+00:00:34,900 --> 00:00:36,700
+Okay, what about this one?
+
+14
+00:00:37,200 --> 00:00:38,320
+What do you call it?
+
+15
+00:00:38,640 --> 00:00:39,880
+We call it a biscuit.
+
+16
+00:00:40,360 --> 00:00:40,560
+What?
+
+17
+00:00:41,080 --> 00:00:45,640
+But biscuits are those lucky round breads we eat for breakfast.
+
