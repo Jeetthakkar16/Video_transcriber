@@ -245,10 +245,13 @@ async def create_job(background_tasks: BackgroundTasks, video: UploadFile = File
                 if not chunk: break
                 size += len(chunk)
                 if size > MAX_UPLOAD_MB * 1024 * 1024:
-                    target.unlink(missing_ok=True); raise HTTPException(413,"Upload exceeds " + str(MAX_UPLOAD_MB) + " MB.")
+                    break
                 dest.write(chunk)
     finally:
         await video.close()
+    if size > MAX_UPLOAD_MB * 1024 * 1024:
+        target.unlink(missing_ok=True)
+        raise HTTPException(413,"Upload exceeds " + str(MAX_UPLOAD_MB) + " MB.")
     if size == 0: target.unlink(missing_ok=True); raise HTTPException(400,"Uploaded file is empty.")
     job = {"id":job_id,"status":"queued","progress":0,"message":"Waiting to start","created_at":now(),
            "filename":Path(video.filename or target.name).name,"source_path":str(target),
