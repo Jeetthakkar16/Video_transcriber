@@ -300,7 +300,7 @@ def export_video(job_id: str):
     if job.get("status") != "completed": raise HTTPException(409,"Wait for subtitle generation to finish.")
     d = folder(job_id); srt = d / "subtitles.srt"; output = d / "subtitled_video.mp4"
     # Always render from the latest saved segments, not the first generated SRT.
-    srt.write_text(srt_text(job["segments"]),encoding="utf-8-sig")
+    srt.write_text(srt_text(job["segments"]),encoding="utf-8")
     settings = job.get("settings") or {}
     family = re.sub(r"[^A-Za-z0-9 _-]","",settings.get("font_family","Arial")) or "Arial"
     style = "FontName=" + family + ",FontSize=" + str(settings.get("font_size",26)) + ",Outline=" + str(2 if settings.get("outline",True) else 0) + ",Shadow=0,MarginV=32"
