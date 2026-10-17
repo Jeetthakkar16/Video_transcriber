@@ -131,7 +131,7 @@ def vtt_text(segments):
 
 def write_artifacts(job):
     d = folder(job["id"]); segs = job.get("segments", [])
-    (d / "subtitles.srt").write_text(srt_text(segs), encoding="utf-8-sig")
+    (d / "subtitles.srt").write_text(srt_text(segs), encoding="utf-8")
     (d / "subtitles.vtt").write_text(vtt_text(segs), encoding="utf-8-sig")
     (d / "transcript.txt").write_text("\n".join(s["text"] for s in segs) + ("\n" if segs else ""), encoding="utf-8")
     job["download_urls"] = artifacts(job)
@@ -308,7 +308,7 @@ def export_video(job_id: str):
     job["status"], job["message"] = "exporting","Rendering subtitles into MP4"; save(job)
     try:
         ffmpeg(["ffmpeg","-y","-i",str(Path(job["source_path"])),"-vf",vf,"-map","0:v:0","-map","0:a?",
-                "-c:v","libx264","-preset","medium","-crf","20","-c:a","copy","-movflags","+faststart",str(output)])
+                "-c:v","libx264","-preset","medium","-crf","20","-c:a","aac","-b:a","192k","-movflags","+faststart",str(output)])
         job["status"], job["message"] = "completed","Subtitle video export completed"
         job["download_urls"] = artifacts(job); save(job)
         return {"ok":True,"download_url":job["download_urls"]["video"]}
