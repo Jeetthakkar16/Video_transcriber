@@ -1,5 +1,5 @@
 from __future__ import annotations
-import json, os, re, shutil, subprocess, threading, uuid
+import json, os, re, shutil, subprocess, threading, uuid, urllib.request, urllib.error
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -16,6 +16,15 @@ UPLOADS, JOBS_DIR = DATA / "uploads", DATA / "jobs"
 for p in (UPLOADS, JOBS_DIR): p.mkdir(parents=True, exist_ok=True)
 MAX_UPLOAD_MB = int(os.getenv("BHASHAFRAME_MAX_UPLOAD_MB", "2048"))
 MODELS = {"tiny", "base", "small", "medium", "large", "turbo"}
+LANG_LABELS = {
+    "en":"English","hi":"Hindi","mr":"Marathi","gu":"Gujarati","bn":"Bengali",
+    "ta":"Tamil","te":"Telugu","kn":"Kannada","ml":"Malayalam","pa":"Punjabi","ur":"Urdu",
+    "or":"Odia","as":"Assamese","ne":"Nepali","sa":"Sanskrit","es":"Spanish","fr":"French",
+    "de":"German","it":"Italian","pt":"Portuguese","ru":"Russian","ja":"Japanese","ko":"Korean",
+    "zh":"Chinese","ar":"Arabic","tr":"Turkish","id":"Indonesian","vi":"Vietnamese","th":"Thai",
+    "nl":"Dutch","pl":"Polish","uk":"Ukrainian","sv":"Swedish","fi":"Finnish","el":"Greek",
+    "he":"Hebrew","cs":"Czech","ro":"Romanian","hu":"Hungarian","hinglish":"Hinglish (Hindi in Latin script)"
+}
 app = FastAPI(title="BhashaFrame V2", version="2.0.0")
 app.mount("/static", StaticFiles(directory=ROOT / "frontend" / "static"), name="static")
 JOBS: dict[str, dict[str, Any]] = {}
@@ -156,6 +165,52 @@ def get_model(model_name, device):
         MODEL_CACHE[key] = whisper.load_model(model_name, device=device)
     return MODEL_CACHE[key]
 
+def cloud_translate_segments(segments, target_language):
+    api_key = os.getenv("OPENAI_API_KEY", "").strip()
+    if not api_key:
+        raise RuntimeError("Cloud translation was selected, but OPENAI_API_KEY is not configured on the server.")
+    target_name = LANG_LABELS.get(target_language, target_language)
+    output = [dict(s) for s in segments]
+    for batch_start in range(0, len(output), 18):
+        batch = output[batch_start:batch_start + 18]
+        request_body = {
+            "model": os.getenv("BHASHA_TRANSLATION_MODEL", "gpt-4o-mini"),
+            "temperature": 0.1,
+            "response_format": {"type": "json_object"},
+            "messages": [
+                {"role": "system", "content":
+                 "Translate subtitle lines into " + target_name + ". Preserve meaning, tone, names, numbers, and natural dialogue. "
+                 "Return only a JSON object with a translations array containing one translated string per input line in exactly the same order. "
+                 "Do not output timestamps, line numbers, markdown, or explanations. For Hinglish, write Hindi primarily in Latin script and retain natural common English words."},
+                {"role": "user", "content": json.dumps({"lines": [s["text"] for s in batch]}, ensure_ascii=False)}
+            ]
+        }
+        request = urllib.request.Request(
+            "https://api.openai.com/v1/chat/completions",
+            data=json.dumps(request_body, ensure_ascii=False).encode("utf-8"),
+            headers={"Authorization": "Bearer " + api_key, "Content-Type": "application/json"},
+            method="POST"
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=90) as response:
+                response_json = json.loads(response.read().decode("utf-8"))
+            content = response_json["choices"][0]["message"]["content"]
+            translations = json.loads(content).get("translations")
+            if not isinstance(translations, list) or len(translations) != len(batch):
+                raise RuntimeError("Cloud translation returned an unexpected number of subtitle lines.")
+            for i, translated in enumerate(translations):
+                if not isinstance(translated, str) or not translated.strip():
+                    raise RuntimeError("Cloud translation returned an empty line.")
+                output[batch_start + i]["text"] = translated.strip()
+        except urllib.error.HTTPError as exc:
+            detail = exc.read().decode("utf-8", errors="replace")[-1000:]
+            raise RuntimeError("Cloud translation request failed (HTTP " + str(exc.code) + "): " + detail) from exc
+        except urllib.error.URLError as exc:
+            raise RuntimeError("Could not connect to the cloud translation service: " + str(exc.reason)) from exc
+        except (KeyError, TypeError, ValueError) as exc:
+            raise RuntimeError("Could not parse the cloud translation response: " + str(exc)) from exc
+    return output
+
 def process(job_id):
     job = JOBS[job_id]
     try:
@@ -191,6 +246,12 @@ def process(job_id):
             raw.append({"id":i,"start":max(0,float(seg.get("start",0))+offset),
                         "end":max(0.05,float(seg.get("end",.05))+offset),"text":str(seg.get("text","")).strip()})
         job["segments"] = normalize(raw, media["duration"])
+        target_language = job["options"].get("target_language", "same")
+        if target_language != "same":
+            if job["options"].get("translation_provider") != "openai":
+                raise RuntimeError("Choose the optional OpenAI cloud provider to translate to a different target language.")
+            set_progress(job_id, 94, "Translating subtitle lines to the target language")
+            job["segments"] = cloud_translate_segments(job["segments"], target_language)
         if not job["segments"]: raise RuntimeError("No speech segments were detected. Check the audio or try another model.")
         job["detected_language"], job["duration"], job["media"] = result.get("language", language), media["duration"], media
         job["model"], job["device"] = job["options"]["model"], device
@@ -226,14 +287,19 @@ def get_settings():
       ("el","Greek"),("he","Hebrew"),("cs","Czech"),("ro","Romanian"),("hu","Hungarian")
     ]
     return {"models":["tiny","base","small","medium","large","turbo"],"default_model":os.getenv("BHASHA_MODEL","base"),
-            "max_upload_mb":MAX_UPLOAD_MB,"languages":[{"code":a,"name":b} for a,b in languages]}
+            "max_upload_mb":MAX_UPLOAD_MB,"cloud_translation_available":bool(os.getenv("OPENAI_API_KEY","").strip()),
+            "translation_model":os.getenv("BHASHA_TRANSLATION_MODEL","gpt-4o-mini"),"languages":[{"code":a,"name":b} for a,b in languages]}
 
 @app.post("/api/jobs")
 async def create_job(background_tasks: BackgroundTasks, video: UploadFile = File(...),
                      source_language: str = Form("auto"), task: str = Form("transcribe"),
-                     model: str = Form("base"), device: str = Form("auto")):
+                     model: str = Form("base"), device: str = Form("auto"),
+                     target_language: str = Form("same"), translation_provider: str = Form("local")):
     if task not in ("transcribe","translate_to_english"): raise HTTPException(400,"Unsupported processing mode.")
     if model not in MODELS: raise HTTPException(400,"Unsupported Whisper model.")
+    if translation_provider not in ("local","openai"): raise HTTPException(400,"Unsupported translation provider.")
+    if target_language != "same" and translation_provider != "openai": raise HTTPException(400,"Choose Cloud translation when using a different subtitle language.")
+    if target_language != "same" and not os.getenv("OPENAI_API_KEY","").strip(): raise HTTPException(400,"Set OPENAI_API_KEY on the server to enable optional cloud translation.")
     suffix = Path(video.filename or "video.mp4").suffix.lower()
     if suffix not in {".mp4",".mov",".mkv",".webm",".avi",".m4v",".mpeg",".mpg"}:
         raise HTTPException(415,"Supported files: MP4, MOV, MKV, WEBM, AVI, M4V, MPEG.")
@@ -255,7 +321,7 @@ async def create_job(background_tasks: BackgroundTasks, video: UploadFile = File
     if size == 0: target.unlink(missing_ok=True); raise HTTPException(400,"Uploaded file is empty.")
     job = {"id":job_id,"status":"queued","progress":0,"message":"Waiting to start","created_at":now(),
            "filename":Path(video.filename or target.name).name,"source_path":str(target),
-           "options":{"source_language":source_language,"task":task,"model":model,"device":device},
+           "options":{"source_language":source_language,"task":task,"model":model,"device":device,"target_language":target_language,"translation_provider":translation_provider},
            "segments":[],"settings":{},"download_urls":{}}
     save(job); background_tasks.add_task(process, job_id)
     return clean_job(job)
