@@ -94,7 +94,7 @@ def probe(path: Path):
     a_start = float(audio.get("start_time") or fmt.get("start_time") or 0)
     return {"duration": duration, "width": video.get("width"), "height": video.get("height"),
             "video_codec": video.get("codec_name"), "audio_codec": audio.get("codec_name"),
-            "audio_video_offset": max(0.0, a_start - v_start)}
+            "audio_video_offset": (a_start - v_start)}
 
 def fmt_srt(seconds):
     ms = max(0, round(float(seconds) * 1000))

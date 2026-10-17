@@ -10,7 +10,7 @@ This fresh project uses the local Whisper + FFmpeg pipeline from the original [V
 - Upload-based jobs, processing status, persisted job metadata, SRT/VTT/TXT exports.
 - Editable text/start/end times and subtitle preview synchronized with video playback.
 - FFprobe stream checks, normalized FFmpeg audio extraction, audio/video start-offset compensation, segment clamping to duration.
-- MP4 subtitle burn-in with FFmpeg/libass and original audio stream copied.
+- MP4 subtitle burn-in with FFmpeg/libass and original audio retained (transcoded to AAC when needed for MP4 compatibility).
 
 ## Windows quick start
 1. Install Python 3.11.
